@@ -1,9 +1,13 @@
 # in this program,we want to write object-oriented codes,and enhance the extension.
 __author__ = 'zhang'
-from pylab import *
+import argparse
+import os
+from pathlib import Path
+# code cũ: from pylab import *
 import networkx as nx
 import math
-from numpy.linalg import inv
+from numpy import linalg
+from numpy.linalg import inv, pinv
 from sklearn.metrics import precision_recall_curve
 from sklearn.preprocessing import MinMaxScaler
 import copy
@@ -12,6 +16,7 @@ import csv
 import array
 import random
 import numpy
+import numpy as np
 from deap import algorithms
 from deap import base
 from deap import creator
@@ -23,6 +28,21 @@ from sklearn.metrics import recall_score
 from sklearn.metrics import f1_score
 from sklearn.metrics import precision_score
 from sklearn import linear_model
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+def resolve_project_path(filename):
+    path = Path(filename)
+    if path.is_absolute():
+        return path
+    return PROJECT_ROOT / path
+
+def to_1d_float_array(values):
+    return np.real(np.asarray(values)).astype(float).ravel()
+
+def normalize_score_vector(values):
+    values = to_1d_float_array(values).reshape(-1, 1)
+    return MinMaxScaler().fit_transform(values).ravel()
 
 def cross_validation(drug_drug_matrix, CV_num, seed):
     link_number = 0
@@ -89,7 +109,8 @@ def cross_validation(drug_drug_matrix, CV_num, seed):
 class Topology:
     def topology_similarity_matrix(drug_drug_matrix):
        drug_drug_matrix=np.matrix(drug_drug_matrix)
-       G = nx.from_numpy_matrix(drug_drug_matrix)
+       # code cũ: G = nx.from_numpy_matrix(drug_drug_matrix)
+       G = nx.from_numpy_array(np.asarray(drug_drug_matrix, dtype=float))
        drug_num=len(drug_drug_matrix)
        common_similarity_matrix=np.zeros(shape=(drug_num,drug_num))
        AA_similarity_matrix=np.zeros(shape=(drug_num,drug_num))
@@ -108,8 +129,13 @@ class Topology:
              AA_score=0
              RA_score=0
              for k in range(0,len(commonn_neighbor)):
-                  AA_score=AA_score+1/math.log(len(G.neighbors(commonn_neighbor[k])))
-                  RA_score=RA_score+1/len(G.neighbors(commonn_neighbor[k]))
+                  neighbor_degree = G.degree(commonn_neighbor[k])
+                  # code cũ: AA_score=AA_score+1/math.log(len(G.neighbors(commonn_neighbor[k])))
+                  if neighbor_degree > 1:
+                     AA_score=AA_score+1/math.log(neighbor_degree)
+                  # code cũ: RA_score=RA_score+1/len(G.neighbors(commonn_neighbor[k]))
+                  if neighbor_degree > 0:
+                     RA_score=RA_score+1/neighbor_degree
              AA_similarity_matrix[i][j]=AA_score
              RA_similarity_matrix[i][j]=RA_score
 
@@ -137,7 +163,8 @@ class Topology:
 
 def load_csv(filename,type): #  load csv, ignore the first row,type=int, data read as int， else float
         matrix_data=[]
-        with open(filename, 'r') as csvfile:
+        # code cũ: with open(filename, 'r') as csvfile:
+        with open(resolve_project_path(filename), 'r') as csvfile:
             csvreader = csv.reader(csvfile, delimiter=',')
             next(csvreader)
             for row_vector in csvreader:
@@ -155,10 +182,11 @@ def modelEvaluation(real_matrix,predict_matrix,testPosition,featurename): #  com
            real_labels.append(real_matrix[testPosition[i][0],testPosition[i][1]])
            predicted_probability.append(predict_matrix[testPosition[i][0],testPosition[i][1]])
 
-       normalize=MinMaxScaler()
-       predicted_probability= normalize.fit_transform(predicted_probability)
-       real_labels=np.array(real_labels)
-       predicted_probability=np.array(predicted_probability)
+       # code cũ: normalize=MinMaxScaler()
+       # code cũ: predicted_probability= normalize.fit_transform(predicted_probability)
+       predicted_probability=normalize_score_vector(predicted_probability)
+       real_labels=np.array(real_labels).ravel()
+       # code cũ: predicted_probability=np.array(predicted_probability)
 
        precision, recall, pr_thresholds = precision_recall_curve(real_labels, predicted_probability)
        aupr_score = auc(recall, precision)
@@ -199,8 +227,12 @@ def fitFunction(individual,parameter1,parameter2):
 
 
 def getParamter(real_matrix, multiple_matrix, testPosition):
-    creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-    creator.create("Individual", array.array, typecode='d', fitness=creator.FitnessMax)
+    # code cũ: creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+    if not hasattr(creator, "FitnessMax"):
+        creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+    # code cũ: creator.create("Individual", array.array, typecode='d', fitness=creator.FitnessMax)
+    if not hasattr(creator, "Individual"):
+        creator.create("Individual", array.array, typecode='d', fitness=creator.FitnessMax)
     toolbox = base.Toolbox()
     # Attribute generator
     toolbox.register("attr_float", random.uniform, 0, 1)
@@ -219,8 +251,9 @@ def getParamter(real_matrix, multiple_matrix, testPosition):
         predict_matrix = multiple_matrix[i]
         for j in range(0, len(testPosition)):
             predicted_probability.append(predict_matrix[testPosition[j][0], testPosition[j][1]])
-        normalize = MinMaxScaler()
-        predicted_probability = normalize.fit_transform(predicted_probability)
+        # code cũ: normalize = MinMaxScaler()
+        # code cũ: predicted_probability = normalize.fit_transform(predicted_probability)
+        predicted_probability = normalize_score_vector(predicted_probability)
         multiple_prediction.append(predicted_probability)
 
     #################################################################################################
@@ -272,7 +305,8 @@ class MethodHub():
 
        ratio=0.1   # disturb how many links are removed
        select_num=int(len(row_index)*ratio)
-       index=arange(0, (upper_A.sum()).sum())
+       # code cũ: index=arange(0, (upper_A.sum()).sum())
+       index=np.arange(0, (upper_A.sum()).sum())
        # print(index.shape)
 
        random.seed(0)
@@ -502,17 +536,21 @@ def internal_determine_parameter(drug_drug_matrix):
     for i in range(0, len(testPosition)):
         vector=[]
         for j in range(0, len(multiple_matrix)):
-           vector.append(multiple_matrix[j][testPosition[i][0], testPosition[i][1]])
+           # code cũ: vector.append(multiple_matrix[j][testPosition[i][0], testPosition[i][1]])
+           vector.append(float(np.real(multiple_matrix[j][testPosition[i][0], testPosition[i][1]])))
         input_matrix.append(vector)
-        output_matrix.append(drug_drug_matrix[testPosition[i][0], testPosition[i][1]])
+        # code cũ: output_matrix.append(drug_drug_matrix[testPosition[i][0], testPosition[i][1]])
+        output_matrix.append(int(drug_drug_matrix[testPosition[i][0], testPosition[i][1]]))
 
 
     input_matrix=np.array(input_matrix)
     output_matrix= np.array(output_matrix)
-    clf1 = linear_model.LogisticRegression(C=1.0, penalty='l1', tol=1e-6)
+    # code cũ: clf1 = linear_model.LogisticRegression(C=1.0, penalty='l1', tol=1e-6)
+    clf1 = linear_model.LogisticRegression(C=1.0, penalty='l1', solver='liblinear', tol=1e-6, max_iter=1000)
     clf1.fit(input_matrix, output_matrix)
 
-    clf2 = linear_model.LogisticRegression(C=1.0, penalty='l2', tol=1e-6)
+    # code cũ: clf2 = linear_model.LogisticRegression(C=1.0, penalty='l2', tol=1e-6)
+    clf2 = linear_model.LogisticRegression(C=1.0, penalty='l2', tol=1e-6, max_iter=1000)
     clf2.fit(input_matrix, output_matrix)
     print('*************************parameter determined*************************')
     # return weights
@@ -561,9 +599,10 @@ def ensemble_scoring(real_matrix, multiple_matrix, testPosition, weights,cf1,cf2
         predict_matrix = multiple_matrix[i]
         for j in range(0, len(testPosition)):
             predicted_probability.append(predict_matrix[testPosition[j][0], testPosition[j][1]])
-        normalize = MinMaxScaler()
-        predicted_probability = normalize.fit_transform(predicted_probability)
-        predicted_probability=np.array(predicted_probability)
+        # code cũ: normalize = MinMaxScaler()
+        # code cũ: predicted_probability = normalize.fit_transform(predicted_probability)
+        predicted_probability=normalize_score_vector(predicted_probability)
+        # code cũ: predicted_probability=np.array(predicted_probability)
         multiple_prediction.append(predicted_probability)
     ensemble_prediction = np.zeros(len(real_labels))
     for i in range(0, len(multiple_matrix)):
@@ -574,17 +613,20 @@ def ensemble_scoring(real_matrix, multiple_matrix, testPosition, weights,cf1,cf2
     for i in range(0, len(testPosition)):
         vector=[]
         for j in range(0, len(multiple_matrix)):
-           vector.append(multiple_matrix[j][testPosition[i][0], testPosition[i][1]])
-        vector=np.array(vector)
+           # code cũ: vector.append(multiple_matrix[j][testPosition[i][0], testPosition[i][1]])
+           vector.append(float(np.real(multiple_matrix[j][testPosition[i][0], testPosition[i][1]])))
+        # code cũ: vector=np.array(vector)
+        vector=np.array(vector).reshape(1, -1)
 
         aa=cf1.predict_proba(vector)
-        print(aa)
+        # code cũ: print(aa)
         ensemble_prediction_cf1[i]=(cf1.predict_proba(vector))[0][1]
         ensemble_prediction_cf2[i]=(cf2.predict_proba(vector))[0][1]
 
 
-    normalize = MinMaxScaler()
-    ensemble_prediction = normalize.fit_transform(ensemble_prediction)
+    # code cũ: normalize = MinMaxScaler()
+    # code cũ: ensemble_prediction = normalize.fit_transform(ensemble_prediction)
+    ensemble_prediction = normalize_score_vector(ensemble_prediction)
 
     result = calculate_metric_score(real_labels, ensemble_prediction)
     result_cf1=calculate_metric_score(real_labels, ensemble_prediction_cf1)
@@ -593,6 +635,8 @@ def ensemble_scoring(real_matrix, multiple_matrix, testPosition, weights,cf1,cf2
     return result,result_cf1,result_cf2
 
 def calculate_metric_score(real_labels,predict_score):
+   real_labels=np.array(real_labels).ravel()
+   predict_score=to_1d_float_array(predict_score)
    precision, recall, pr_thresholds = precision_recall_curve(real_labels, predict_score)
    aupr_score = auc(recall, precision)
 
@@ -621,16 +665,71 @@ def calculate_metric_score(real_labels,predict_score):
    results = [auc_score, aupr_score, precision, recall, accuracy, f]
    return results
 
+def run_smoke_test(sample_size, seed):
+    print('DAY 1 smoke test: load data -> holdout split -> chem_neighbor -> metrics')
+    drug_drug_matrix = load_csv('dataset/drug_drug_matrix.csv', 'int')
+    chem_similarity_matrix = load_csv('dataset/chem_Jacarrd_sim.csv', 'float')
 
+    drug_drug_matrix = drug_drug_matrix[:sample_size, :sample_size]
+    chem_similarity_matrix = chem_similarity_matrix[:sample_size, :sample_size]
 
-runtimes=20        # implement 20 runs of 5-fold cross validation for base predictors and the ensmeble model
+    train_drug_drug_matrix, testPosition = holdout_by_link(copy.deepcopy(drug_drug_matrix), 0.2, seed)
+    predict_matrix = MethodHub.neighbor_method(chem_similarity_matrix, train_drug_drug_matrix)
+    results = modelEvaluation(drug_drug_matrix, predict_matrix, testPosition, 'day1_chem_neighbor_smoke')
 
-drug_drug_matrix = load_csv('dataset/drug_drug_matrix.csv', 'int')
-file_results_str="result/result_on_our_dataset_5CV"
-weights_results_str="result/weights_on_our_dataset_5CV"
-for seed in range(0, runtimes):
-    file_results_path=file_results_str+"_"+str(seed)+".txt"
-    weights_results_path=weights_results_str+"_"+str(seed)+".txt"
-    file_results = open(file_results_path, "w")
-    file_weights = open(weights_results_path, "w")
-    cross_validation(drug_drug_matrix, 5, seed)
+    print('DAY 1 smoke test finished')
+    print('sample_size:', sample_size)
+    print('test_pairs:', len(testPosition))
+    print('metrics:', results)
+
+def run_legacy_full_experiment(runtimes, cv_num):
+    global file_results
+    global file_weights
+
+    drug_drug_matrix = load_csv('dataset/drug_drug_matrix.csv', 'int')
+    file_results_str="result/result_on_our_dataset_5CV"
+    weights_results_str="result/weights_on_our_dataset_5CV"
+    os.makedirs(resolve_project_path('result'), exist_ok=True)
+    for seed in range(0, runtimes):
+        file_results_path=resolve_project_path(file_results_str+"_"+str(seed)+".txt")
+        weights_results_path=resolve_project_path(weights_results_str+"_"+str(seed)+".txt")
+        file_results = open(file_results_path, "w")
+        file_weights = open(weights_results_path, "w")
+        try:
+            cross_validation(drug_drug_matrix, cv_num, seed)
+        finally:
+            file_results.close()
+            file_weights.close()
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='DDI prediction legacy experiment runner')
+    parser.add_argument('--smoke-test', action='store_true', help='Run a small Day 1 check instead of the full legacy experiment')
+    parser.add_argument('--sample-size', type=int, default=50, help='Number of drugs used by --smoke-test')
+    parser.add_argument('--seed', type=int, default=0, help='Random seed used by --smoke-test')
+    parser.add_argument('--legacy-full-run', action='store_true', help='Run the original full cross-validation experiment')
+    parser.add_argument('--runtimes', type=int, default=20, help='Number of seeds for --legacy-full-run')
+    parser.add_argument('--cv-num', type=int, default=5, help='Number of folds for --legacy-full-run')
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+    if args.legacy_full_run:
+        run_legacy_full_experiment(args.runtimes, args.cv_num)
+    else:
+        run_smoke_test(args.sample_size, args.seed)
+
+# code cũ:
+# runtimes=20        # implement 20 runs of 5-fold cross validation for base predictors and the ensmeble model
+#
+# drug_drug_matrix = load_csv('dataset/drug_drug_matrix.csv', 'int')
+# file_results_str="result/result_on_our_dataset_5CV"
+# weights_results_str="result/weights_on_our_dataset_5CV"
+# for seed in range(0, runtimes):
+#     file_results_path=file_results_str+"_"+str(seed)+".txt"
+#     weights_results_path=weights_results_str+"_"+str(seed)+".txt"
+#     file_results = open(file_results_path, "w")
+#     file_weights = open(weights_results_path, "w")
+#     cross_validation(drug_drug_matrix, 5, seed)
+
+if __name__ == '__main__':
+    main()
