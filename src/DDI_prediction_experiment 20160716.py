@@ -1,7 +1,10 @@
 # in this program,we want to write object-oriented codes,and enhance the extension.
 __author__ = 'zhang'
 import argparse
+import json
 import os
+import platform
+from datetime import datetime, timezone
 from pathlib import Path
 # code cũ: from pylab import *
 import networkx as nx
@@ -17,6 +20,8 @@ import array
 import random
 import numpy
 import numpy as np
+import deap
+import sklearn
 from deap import algorithms
 from deap import base
 from deap import creator
@@ -30,12 +35,30 @@ from sklearn.metrics import precision_score
 from sklearn import linear_model
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+METRIC_NAMES = ['auc', 'aupr', 'precision', 'recall', 'accuracy', 'f1']
 
 def resolve_project_path(filename):
     path = Path(filename)
     if path.is_absolute():
         return path
     return PROJECT_ROOT / path
+
+def build_run_id(run_name, seed, sample_size):
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    if run_name:
+        safe_run_name = ''.join(char if char.isalnum() or char in ['-', '_'] else '-' for char in run_name)
+        return safe_run_name
+    return 'smoke_seed%s_n%s_%s' % (seed, sample_size, timestamp)
+
+def write_json(path, data):
+    path = resolve_project_path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, 'w') as json_file:
+        json.dump(data, json_file, indent=2, sort_keys=True)
+        json_file.write('\n')
+
+def metrics_list_to_dict(results):
+    return {METRIC_NAMES[i]: float(results[i]) for i in range(0, len(METRIC_NAMES))}
 
 def to_1d_float_array(values):
     return np.real(np.asarray(values)).astype(float).ravel()
@@ -665,8 +688,9 @@ def calculate_metric_score(real_labels,predict_score):
    results = [auc_score, aupr_score, precision, recall, accuracy, f]
    return results
 
-def run_smoke_test(sample_size, seed):
-    print('DAY 1 smoke test: load data -> holdout split -> chem_neighbor -> metrics')
+# code cũ: def run_smoke_test(sample_size, seed):
+def run_smoke_test(sample_size, seed, output_dir, run_name):
+    print('DAY 2 smoke test: load data -> holdout split -> chem_neighbor -> metrics -> save artifacts')
     drug_drug_matrix = load_csv('dataset/drug_drug_matrix.csv', 'int')
     chem_similarity_matrix = load_csv('dataset/chem_Jacarrd_sim.csv', 'float')
 
@@ -675,12 +699,42 @@ def run_smoke_test(sample_size, seed):
 
     train_drug_drug_matrix, testPosition = holdout_by_link(copy.deepcopy(drug_drug_matrix), 0.2, seed)
     predict_matrix = MethodHub.neighbor_method(chem_similarity_matrix, train_drug_drug_matrix)
-    results = modelEvaluation(drug_drug_matrix, predict_matrix, testPosition, 'day1_chem_neighbor_smoke')
+    # code cũ: results = modelEvaluation(drug_drug_matrix, predict_matrix, testPosition, 'day1_chem_neighbor_smoke')
+    results = modelEvaluation(drug_drug_matrix, predict_matrix, testPosition, 'day2_chem_neighbor_smoke')
 
-    print('DAY 1 smoke test finished')
+    run_id = build_run_id(run_name, seed, sample_size)
+    run_dir = resolve_project_path(output_dir) / run_id
+    metrics = metrics_list_to_dict(results)
+    run_config = {
+        'run_id': run_id,
+        'run_type': 'smoke_test',
+        'source_file': 'src/DDI_prediction_experiment 20160716.py',
+        'seed': seed,
+        'sample_size': sample_size,
+        'test_pairs': len(testPosition),
+        'model': 'chem_neighbor',
+        'dataset': {
+            'drug_drug_matrix': 'dataset/drug_drug_matrix.csv',
+            'similarity_matrix': 'dataset/chem_Jacarrd_sim.csv',
+        },
+        'environment': {
+            'python_version': platform.python_version(),
+            'platform': platform.platform(),
+            'numpy_version': np.__version__,
+            'networkx_version': nx.__version__,
+            'scikit_learn_version': sklearn.__version__,
+            'deap_version': deap.__version__,
+        },
+    }
+
+    write_json(run_dir / 'run_config.json', run_config)
+    write_json(run_dir / 'metrics.json', metrics)
+
+    print('DAY 2 smoke test finished')
     print('sample_size:', sample_size)
     print('test_pairs:', len(testPosition))
     print('metrics:', results)
+    print('run_dir:', run_dir)
 
 def run_legacy_full_experiment(runtimes, cv_num):
     global file_results
@@ -703,9 +757,12 @@ def run_legacy_full_experiment(runtimes, cv_num):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='DDI prediction legacy experiment runner')
-    parser.add_argument('--smoke-test', action='store_true', help='Run a small Day 1 check instead of the full legacy experiment')
+    # code cũ: parser.add_argument('--smoke-test', action='store_true', help='Run a small Day 1 check instead of the full legacy experiment')
+    parser.add_argument('--smoke-test', action='store_true', help='Run a small reproducible check instead of the full legacy experiment')
     parser.add_argument('--sample-size', type=int, default=50, help='Number of drugs used by --smoke-test')
     parser.add_argument('--seed', type=int, default=0, help='Random seed used by --smoke-test')
+    parser.add_argument('--output-dir', default='artifacts/day2_runs', help='Directory used to save reproducible run artifacts')
+    parser.add_argument('--run-name', default=None, help='Optional deterministic run folder name')
     parser.add_argument('--legacy-full-run', action='store_true', help='Run the original full cross-validation experiment')
     parser.add_argument('--runtimes', type=int, default=20, help='Number of seeds for --legacy-full-run')
     parser.add_argument('--cv-num', type=int, default=5, help='Number of folds for --legacy-full-run')
@@ -716,7 +773,8 @@ def main():
     if args.legacy_full_run:
         run_legacy_full_experiment(args.runtimes, args.cv_num)
     else:
-        run_smoke_test(args.sample_size, args.seed)
+        # code cũ: run_smoke_test(args.sample_size, args.seed)
+        run_smoke_test(args.sample_size, args.seed, args.output_dir, args.run_name)
 
 # code cũ:
 # runtimes=20        # implement 20 runs of 5-fold cross validation for base predictors and the ensmeble model
